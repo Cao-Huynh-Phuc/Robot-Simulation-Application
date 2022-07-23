@@ -1,0 +1,505 @@
+function PathPlanning(xA,yA,zA,yawA,xB,yB,zB,yawB,mode_trajectory,mode_path,disable_kinematics_singularity,enable_noncentralize_control,handles)
+%%
+%Mode path 0: linear
+%Mode path 1: Circular
+%Mode trajectory 0: LSPB
+%Mode trajectory 1: S curve
+%%
+global theta1 theta2 d3 theta4
+if (isempty(theta1))
+    theta1 = 0.0;
+    theta2 = 0.0;
+    d3 = 0.0;
+    theta4 = 0.0;
+end
+theta1_current = theta1;
+theta2_current = theta2;
+d3_current = d3;
+theta4_current = theta4;
+IsPossible = true;
+
+Ts = 0.01;
+
+q = [];
+v = [];
+a = [];
+qx = [];
+qy = [];
+qz = [];
+vx = [];
+vy = [];
+vz = [];
+ax = [];
+ay = [];
+az = [];
+
+q_real = [];
+qx_real = [];
+qy_real = [];
+qz_real = [];
+
+q_plot = [];
+v_plot = [];
+a_plot = [];
+qx_plot = [];
+qy_plot = [];
+qz_plot = [];
+vx_plot = [];
+vy_plot = [];
+vz_plot = [];
+ax_plot = [];
+ay_plot = [];
+az_plot = [];
+
+theta1_sequence = [];
+theta2_sequence = [];
+d3_sequence = [];
+theta4_sequence = [];
+theta1_dot_sequence = [];
+theta2_dot_sequence = [];
+d3_dot_sequence = [];
+theta4_dot_sequence = [];
+theta1_2dot_sequence = [];
+theta2_2dot_sequence = [];
+d3_2dot_sequence = [];
+theta4_2dot_sequence = [];
+
+theta1_sequence_plot = [];
+theta2_sequence_plot = [];
+d3_sequence_plot = [];
+theta4_sequence_plot = [];
+theta1_dot_sequence_plot = [];
+theta2_dot_sequence_plot = [];
+d3_dot_sequence_plot = [];
+theta4_dot_sequence_plot = [];
+theta1_2dot_sequence_plot = [];
+theta2_2dot_sequence_plot = [];
+d3_2dot_sequence_plot = [];
+theta4_2dot_sequence_plot = [];
+
+cla(handles.axes_q);
+cla(handles.axes_qx);
+cla(handles.axes_qy);
+cla(handles.axes_qz);
+cla(handles.axes_v);
+cla(handles.axes_vx);
+cla(handles.axes_vy);
+cla(handles.axes_vz);
+cla(handles.axes_a);
+cla(handles.axes_ax);
+cla(handles.axes_ay);
+cla(handles.axes_az);
+cla(handles.axes_theta1);
+cla(handles.axes_theta2);
+cla(handles.axes_d3);
+cla(handles.axes_theta4);
+cla(handles.axes_theta1_dot);
+cla(handles.axes_theta2_dot);
+cla(handles.axes_d3_dot);
+cla(handles.axes_theta4_dot);
+cla(handles.axes_theta1_2dot);
+cla(handles.axes_theta2_2dot);
+cla(handles.axes_d3_2dot);
+cla(handles.axes_theta4_2dot);
+
+
+v_max = str2double(get(handles.edit_v_max,'String'))/1000;
+a_max = str2double(get(handles.edit_a_max,'String'))/1000;
+%angle_max = abs()
+
+% if (v_max > sqrt(q_max*a_max))
+%     v_max = sqrt(q_max*a_max);
+%     warndlg(['Maximum velocity is impossible and is setted to ',num2str(v_max*1000),' mm/s'],'Warning');  
+%     set(handles.edit_v_max,'String',v_max*1000);
+% end
+
+% tc = v_max/a_max;
+% qc = 1/2*a_max*tc^2;
+% t_central = (q_max-2*qc)/v_max;
+% tf = 2*tc+t_central;
+% t = linspace(0,tf,50);
+
+% if (mode_trajectory == 0)
+%     if (mode_path == 0)
+%         [q,v,a,t,v_max] = trajectory_LSPB(q_max,v_max,a_max,true);
+%     else
+%         [q,v,a,t,~] = trajectory_LSPB(q_max,v_max,a_max,false);
+%     end    
+% else
+%     if (mode_path == 0)
+%         [q,v,a,t,v_max] = trajectory_S_curve(q_max,v_max,a_max,true);
+%     else
+%         [q,v,a,t,~] = trajectory_S_curve(q_max,v_max,a_max,false);
+%     end      
+% end
+
+if (mode_path == 0)
+    q_max = sqrt((xA-xB)^2+(yA-yB)^2 + (zA-zB)^2);
+    set(handles.edit_q_max,'String',q_max*1000);
+    if (mode_trajectory == 0)
+        [q,v,a,t,~] = trajectory_LSPB(q_max,v_max,a_max,Ts,handles,true);   
+    else
+        [q,v,a,t,~] = trajectory_S_curve(q_max,v_max,a_max,Ts,handles,true);
+    end      
+    [qx,qy,qz,vx,vy,vz,ax,ay,az] = path_linear(xA,yA,zA,xB,yB,zB,q,v,a,q_max);
+    for i=1:length(t)      
+        IsPossible = inverse_kinematics(qx(i),qy(i),qz(i),0,disable_kinematics_singularity,true);      
+        theta1_sequence(i) = theta1;
+        theta2_sequence(i) = theta2;    
+        if (i>2)
+            if ((abs(theta1_sequence(i)-theta1_sequence(i-1))>pi/2) || (abs(theta2_sequence(i)-theta2_sequence(i-1))>pi/2))
+                IsPossible = false;
+                waitfor(warndlg('Mechanical Warning!','Warning')); 
+            end
+        end
+        if(IsPossible == false)
+            waitfor(warndlg('Linear Interpolation: I cannot go to this point ','Warning'))
+            break
+        end 
+    end
+else
+% if (mode_path == 1)
+%     theta1 = theta1_current;
+%     theta2 = theta2_current;
+%     d3 = d3_current;
+%     theta4 = theta4_current;
+    %IsPossible = true;
+    [I,R,pC,q_max,angle_max,v1,v2,v3,IsPossible]= path_circular_parameter(xA,yA,zA,xB,yB,zB,v_max,a_max,mode_trajectory,Ts,disable_kinematics_singularity,handles); 
+    if (IsPossible == true)
+        set(handles.edit_q_max,'String',q_max*1000);
+        if (mode_trajectory == 0)
+            [q,v,a,t,~] = trajectory_LSPB(q_max,v_max,a_max,Ts,handles,true);  
+        else       
+            [q,v,a,t,~] = trajectory_S_curve(q_max,v_max,a_max,Ts,handles,true);
+        end
+        [qx,qy,qz,vx,vy,vz,ax,ay,az] = path_circular(I,R,v2,v3,q,v,a);  
+    else
+        waitfor(warndlg('Circular Interpolation: I cannot go to this point','Warning'))
+    end
+    
+end
+
+% for i=1:length(t)
+%     IsPossible = inverse_kinematics(qx(i),qy(i),qz(i),0);    
+%     theta1_sequence(i) = theta1;
+%     theta2_sequence(i) = theta2;    
+%     if (i>2)
+%         if ((abs(theta1_sequence(i)-theta1_sequence(i-1))>pi/2) || (abs(theta2_sequence(i)-theta2_sequence(i-1))>pi/2))
+%             IsPossible = false;
+%             warndlg('Mechanical Warning!','Warning');   
+%         end
+%     end
+%     if(IsPossible == false)
+%         errordlg('You cannot go to this point','Error')
+%         break
+%     end 
+% end
+
+%% Yaw planning
+if(IsPossible==true)    
+    %[~,orientation_e_B_before] = end_effector_position_orientation(theta1,theta2,d3,theta4_current);
+    inverse_kinematics(xB,yB,zB,yawB,disable_kinematics_singularity,false); 
+    theta4_max = theta4 - theta4_current;     
+    theta4_sequence = theta4_current + theta4_max*q/q_max; 
+    for i=1:length(theta4_sequence)
+        while (theta4_sequence(i)<(-pi))
+            theta4_sequence(i) = theta4_sequence(i)+2*pi;
+        end
+        while (theta4_sequence(i)>(pi))
+            theta4_sequence(i) = theta4_sequence(i)-2*pi;
+        end    
+    end
+end
+%%
+theta1 = theta1_current;
+theta2 = theta2_current;
+d3 = d3_current;
+theta4 = theta4_current;
+
+if(IsPossible==true)
+    tf = t(end);
+    %Ts = tf/length(t);
+    for i=1:length(t)
+        inverse_kinematics(qx(i),qy(i),qz(i),0,disable_kinematics_singularity,false);
+        theta4 = theta4_sequence(i);
+        J = jacobian_matrix(theta1, theta2, d3, theta4);
+        J = J(1:3,1:3);
+        joint_velocity = J\[vx(i);vy(i);vz(i)];
+        
+        theta1_sequence(i) = theta1;
+        theta2_sequence(i) = theta2;
+        d3_sequence(i) = d3;
+        %theta4_sequence(i) = theta4;
+        theta1_dot_sequence(i) = joint_velocity(1);
+        theta2_dot_sequence(i) = joint_velocity(2);
+        d3_dot_sequence(i) = joint_velocity(3);
+        %theta4_dot_sequence = joint_velocity(4);
+        if (i==1)
+            theta1_2dot_sequence(i) = 0;
+            theta2_2dot_sequence(i) = 0;
+            d3_2dot_sequence(i) = 0;
+            theta4_dot_sequence(i) = 0;
+            theta4_2dot_sequence(i) = 0;
+        else
+            theta1_2dot_sequence(i) = (theta1_dot_sequence(i) - theta1_dot_sequence(i-1))/Ts;
+            theta2_2dot_sequence(i) = (theta2_dot_sequence(i) - theta2_dot_sequence(i-1))/Ts;
+            d3_2dot_sequence(i) = (d3_dot_sequence(i) - d3_dot_sequence(i-1))/Ts;
+            theta4_dot_sequence(i) = (theta4_sequence(i) - theta4_sequence(i-1))/Ts;
+            theta4_2dot_sequence(i) = (theta4_dot_sequence(i) - theta4_dot_sequence(i-1))/Ts;
+        end                               
+    end
+    theta1 = theta1_current;
+    theta2 = theta2_current;
+    d3 = d3_current;
+    theta4 = theta4_current;
+    
+    if (enable_noncentralize_control == false)
+        N = length(t);
+        index_plot = 1:N;
+    else
+        N = round(tf/10*25);
+        if (N>51)
+            N = 51;
+        end
+        if (N<11)
+            N = 11;
+        end
+        index_plot = round((1:(N-1))*length(t)/N);
+        index_plot(N) = length(t);
+        index_plot(1) = 1;
+    end
+    
+    %index_plot = 1:2000:length(t);
+    t_plot = t(index_plot);
+    q_plot = q(index_plot);
+    v_plot = v(index_plot);
+    a_plot = a(index_plot);
+    qx_plot = qx(index_plot);
+    qy_plot = qy(index_plot);
+    qz_plot = qz(index_plot);
+    vx_plot = vx(index_plot);
+    vy_plot = vy(index_plot);
+    vz_plot = vz(index_plot);
+    ax_plot = ax(index_plot);
+    ay_plot = ay(index_plot);
+    az_plot = az(index_plot);
+    
+    theta1_sequence_plot = theta1_sequence(index_plot);
+    theta2_sequence_plot = theta2_sequence(index_plot);
+    d3_sequence_plot = d3_sequence(index_plot);
+    theta4_sequence_plot = theta4_sequence(index_plot);
+    theta1_dot_sequence_plot = theta1_dot_sequence(index_plot);
+    theta2_dot_sequence_plot = theta2_dot_sequence(index_plot);
+    d3_dot_sequence_plot = d3_dot_sequence(index_plot);
+    theta4_dot_sequence_plot = theta4_dot_sequence(index_plot);
+    theta1_2dot_sequence_plot = theta1_2dot_sequence(index_plot);
+    theta2_2dot_sequence_plot = theta2_2dot_sequence(index_plot);
+    d3_2dot_sequence_plot = d3_2dot_sequence(index_plot);
+    theta4_2dot_sequence_plot = theta4_2dot_sequence(index_plot);
+    
+    if (enable_noncentralize_control == true)
+        [theta1_sequence_real,theta2_sequence_real,d3_sequence_real,theta4_sequence_real] = noncentralize_control(theta1_sequence,theta2_sequence,d3_sequence,theta4_sequence,t,tf,Ts);        
+        for i=1:length(theta1_sequence_real)
+            [pos,~] = end_effector_position_orientation(theta1_sequence_real(i), theta2_sequence_real(i), d3_sequence_real(i), theta4_sequence_real(i));            
+            qx_real(i) = pos(1);
+            qy_real(i) = pos(2);
+            qz_real(i) = pos(3);   
+
+            
+            if (i==1)
+                q_real(i) = 0;
+                vx_real(i) = 0;
+                vy_real(i) = 0;
+                vz_real(i) = 0;   
+                v_real(i) = 0;                
+                ax_real(i) = 0;
+                ay_real(i) = 0;
+                az_real(i) = 0;   
+                a_real(i) = 0;  
+            else
+                q_real(i) = q_real(i-1) + norm(pos-[qx_real(i-1) qy_real(i-1) qz_real(i-1)]');
+                vx_real(i) = (qx_real(i)-qx_real(i-1))/Ts;
+                vy_real(i) = (qy_real(i)-qy_real(i-1))/Ts;
+                vz_real(i) = (qz_real(i)-qz_real(i-1))/Ts;   
+                v_real(i) = (q_real(i)-q_real(i-1))/Ts;                
+                ax_real(i) = (vx_real(i)-vx_real(i-1))/Ts;
+                ay_real(i) = (vy_real(i)-vy_real(i-1))/Ts;
+                az_real(i) = (vz_real(i)-vz_real(i-1))/Ts;   
+                a_real(i) = (v_real(i)-v_real(i-1))/Ts;  
+            end
+            J = jacobian_matrix(theta1_sequence_real(i), theta2_sequence_real(i), d3_sequence_real(i), theta4_sequence_real(i));
+            J = J(1:3,1:3);
+            joint_velocity = J\[vx_real(i);vy_real(i);vz_real(i)];
+            theta1_dot_sequence_real(i) = joint_velocity(1);
+            theta2_dot_sequence_real(i) = joint_velocity(2);
+            d3_dot_sequence_real(i) = joint_velocity(3);
+            
+            if (i==1)
+                theta1_2dot_sequence_real(i) = 0;
+                theta2_2dot_sequence_real(i) = 0;
+                d3_2dot_sequence_real(i) = 0;
+                theta4_dot_sequence_real(i) = 0;
+                theta4_2dot_sequence_real(i) = 0;
+            else
+                theta1_2dot_sequence_real(i) = (theta1_dot_sequence_real(i) - theta1_dot_sequence_real(i-1))/Ts;
+                theta2_2dot_sequence_real(i) = (theta2_dot_sequence_real(i) - theta2_dot_sequence_real(i-1))/Ts;
+                d3_2dot_sequence_real(i) = (d3_dot_sequence_real(i) - d3_dot_sequence_real(i-1))/Ts;
+                theta4_dot_sequence_real(i) = (theta4_sequence_real(i) - theta4_sequence_real(i-1))/Ts;
+                theta4_2dot_sequence_real(i) = (theta4_dot_sequence_real(i) - theta4_dot_sequence_real(i-1))/Ts;
+            end         
+        end
+        qx_real_plot = qx_real(index_plot);
+        qy_real_plot = qy_real(index_plot);
+        qz_real_plot = qz_real(index_plot);   
+        q_real_plot = q_real(index_plot);   
+        vx_real_plot = vx_real(index_plot);
+        vy_real_plot = vy_real(index_plot);
+        vz_real_plot = vz_real(index_plot);   
+        v_real_plot = v_real(index_plot);   
+        ax_real_plot = ax_real(index_plot);
+        ay_real_plot = ay_real(index_plot);
+        az_real_plot = az_real(index_plot);   
+        a_real_plot = a_real(index_plot);         
+        theta1_sequence_real_plot = theta1_sequence_real(index_plot);
+        theta2_sequence_real_plot = theta2_sequence_real(index_plot);
+        d3_sequence_real_plot = d3_sequence_real(index_plot);
+        theta4_sequence_real_plot = theta4_sequence_real(index_plot);
+        theta1_dot_sequence_real_plot = theta1_dot_sequence_real(index_plot);
+        theta2_dot_sequence_real_plot = theta2_dot_sequence_real(index_plot);
+        d3_dot_sequence_real_plot = d3_dot_sequence_real(index_plot);
+        theta4_dot_sequence_real_plot = theta4_dot_sequence_real(index_plot);
+        theta1_2dot_sequence_real_plot = theta1_2dot_sequence_real(index_plot);
+        theta2_2dot_sequence_real_plot = theta2_2dot_sequence_real(index_plot);
+        d3_2dot_sequence_real_plot = d3_2dot_sequence_real(index_plot);
+        theta4_2dot_sequence_real_plot = theta4_2dot_sequence_real(index_plot);        
+        
+        plot(handles.axes_q,t_plot,q_plot*1000,'r');
+        plot(handles.axes_qx,t_plot,qx_plot*1000,'r');
+        plot(handles.axes_qy,t_plot,qy_plot*1000,'r');
+        plot(handles.axes_qz,t_plot,qz_plot*1000,'r');
+    
+        plot(handles.axes_v,t_plot,v_plot*1000,'r');
+        plot(handles.axes_vx,t_plot,vx_plot*1000,'r');
+        plot(handles.axes_vy,t_plot,vy_plot*1000,'r');
+        plot(handles.axes_vz,t_plot,vz_plot*1000,'r');
+    
+        plot(handles.axes_a,t_plot,a_plot*1000,'r');
+        plot(handles.axes_ax,t_plot,ax_plot*1000,'r');
+        plot(handles.axes_ay,t_plot,ay_plot*1000,'r');
+        plot(handles.axes_az,t_plot,az_plot*1000,'r');      
+        
+        plot(handles.axes_theta1,t_plot,theta1_sequence_plot,'r');
+        plot(handles.axes_theta2,t_plot,theta2_sequence_plot,'r');
+        plot(handles.axes_d3,t_plot,d3_sequence_plot*1000,'r');
+        plot(handles.axes_theta4,t_plot,theta4_sequence_plot,'r');
+        
+        plot(handles.axes_theta1_dot,t_plot,theta1_dot_sequence_plot,'r');
+        plot(handles.axes_theta2_dot,t_plot,theta2_dot_sequence_plot,'r');
+        plot(handles.axes_d3_dot,t_plot,d3_dot_sequence_plot*1000,'r');
+        plot(handles.axes_theta4_dot,t_plot,theta4_dot_sequence_plot,'r');
+    
+        plot(handles.axes_theta1_2dot,t_plot,theta1_2dot_sequence_plot,'r');
+        plot(handles.axes_theta2_2dot,t_plot,theta2_2dot_sequence_plot,'r');
+        plot(handles.axes_d3_2dot,t_plot,d3_2dot_sequence_plot*1000,'r');
+        plot(handles.axes_theta4_2dot,t_plot,theta4_2dot_sequence_plot,'r');
+        
+        
+        for i=1:length(index_plot) 
+            plot(handles.axes_q,t_plot(1:i),q_real_plot(1:i)*1000,'b');
+            plot(handles.axes_qx,t_plot(1:i),qx_real_plot(1:i)*1000,'b');
+            plot(handles.axes_qy,t_plot(1:i),qy_real_plot(1:i)*1000,'b');
+            plot(handles.axes_qz,t_plot(1:i),qz_real_plot(1:i)*1000,'b');
+            
+            plot(handles.axes_v,t_plot(1:i),v_real_plot(1:i)*1000,'b');
+            plot(handles.axes_vx,t_plot(1:i),vx_real_plot(1:i)*1000,'b');
+            plot(handles.axes_vy,t_plot(1:i),vy_real_plot(1:i)*1000,'b');
+            plot(handles.axes_vz,t_plot(1:i),vz_real_plot(1:i)*1000,'b');
+            
+            plot(handles.axes_a,t_plot(1:i),a_real_plot(1:i)*1000,'b');
+            plot(handles.axes_ax,t_plot(1:i),ax_real_plot(1:i)*1000,'b');
+            plot(handles.axes_ay,t_plot(1:i),ay_real_plot(1:i)*1000,'b');
+            plot(handles.axes_az,t_plot(1:i),az_real_plot(1:i)*1000,'b');
+                                          
+            plot(handles.axes_theta1,t_plot(1:i),theta1_sequence_real_plot(1:i),'b');
+            plot(handles.axes_theta2,t_plot(1:i),theta2_sequence_real_plot(1:i),'b');
+            plot(handles.axes_d3,t_plot(1:i),d3_sequence_real_plot(1:i)*1000,'b');
+            plot(handles.axes_theta4,t_plot(1:i),theta4_sequence_real_plot(1:i),'b');
+ 
+            plot(handles.axes_theta1_dot,t_plot(1:i),theta1_dot_sequence_real_plot(1:i),'b');
+            plot(handles.axes_theta2_dot,t_plot(1:i),theta2_dot_sequence_real_plot(1:i),'b');
+            plot(handles.axes_d3_dot,t_plot(1:i),d3_dot_sequence_real_plot(1:i)*1000,'b');
+            plot(handles.axes_theta4_dot,t_plot(1:i),theta4_dot_sequence_real_plot(1:i),'b');
+    
+            plot(handles.axes_theta1_2dot,t_plot(1:i),theta1_2dot_sequence_real_plot(1:i),'b');
+            plot(handles.axes_theta2_2dot,t_plot(1:i),theta2_2dot_sequence_real_plot(1:i),'b');
+            plot(handles.axes_d3_2dot,t_plot(1:i),d3_2dot_sequence_real_plot(1:i)*1000,'b');
+            plot(handles.axes_theta4_2dot,t_plot(1:i),theta4_2dot_sequence_real_plot(1:i),'b');
+            
+            theta1 = theta1_sequence_real_plot(i);
+            theta2 = theta2_sequence_real_plot(i);
+            d3 = d3_sequence_real_plot(i);
+            theta4 = theta4_sequence_real_plot(i);
+            update_end_effector(theta1_sequence_real_plot(i), theta2_sequence_real_plot(i), d3_sequence_real_plot(i), theta4_sequence_real_plot(i), handles);
+            plot3(handles.axes_robot,qx_plot,qy_plot,qz_plot,':r','LineWidth',2);
+            plot3(handles.axes_robot,xB,yB,zB,'rx','linewidth',5);
+            plot3(handles.axes_robot,qx_real_plot(1),qy_real_plot(1),qz_real_plot(1),'rx','linewidth',5);
+            plot3(handles.axes_robot,qx_real_plot(1:i),qy_real_plot(1:i),qz_real_plot(1:i),'b','LineWidth',3)                       
+            if (mode_path == 1)
+                plot3(handles.axes_robot,pC(1),pC(2),pC(3),'mx','linewidth',5)
+            end
+            pause(tf/length(index_plot));
+        end
+    else
+    
+        for i=1:length(index_plot)
+%         vx(i) = v(i)*sqrt((xA-xB)^2+(yA-yB)^2)/q_max*(xB-xA)/sqrt((xA-xB)^2+(yA-yB)^2);
+%         vy(i) = v(i)*sqrt((xA-xB)^2+(yA-yB)^2)/q_max*(yB-yA)/sqrt((xA-xB)^2+(yA-yB)^2);
+%         vz(i) = v(i)*(zB-zA)/q_max;
+%         ax(i) = a(i)*sqrt((xA-xB)^2+(yA-yB)^2)/q_max*(xB-xA)/sqrt((xA-xB)^2+(yA-yB)^2);
+%         ay(i) = a(i)*sqrt((xA-xB)^2+(yA-yB)^2)/q_max*(yB-yA)/sqrt((xA-xB)^2+(yA-yB)^2);
+%         az(i) = a(i)*(zB-zA)/q_max;
+    
+            plot(handles.axes_q,t_plot(1:i),q_plot(1:i)*1000,'b');
+            plot(handles.axes_qx,t_plot(1:i),qx_plot(1:i)*1000,'b');
+            plot(handles.axes_qy,t_plot(1:i),qy_plot(1:i)*1000,'b');
+            plot(handles.axes_qz,t_plot(1:i),qz_plot(1:i)*1000,'b');
+    
+            plot(handles.axes_v,t_plot(1:i),v_plot(1:i)*1000,'b');
+            plot(handles.axes_vx,t_plot(1:i),vx_plot(1:i)*1000,'b');
+            plot(handles.axes_vy,t_plot(1:i),vy_plot(1:i)*1000,'b');
+            plot(handles.axes_vz,t_plot(1:i),vz_plot(1:i)*1000,'b');
+    
+            plot(handles.axes_a,t_plot(1:i),a_plot(1:i)*1000,'b');
+            plot(handles.axes_ax,t_plot(1:i),ax_plot(1:i)*1000,'b');
+            plot(handles.axes_ay,t_plot(1:i),ay_plot(1:i)*1000,'b');
+            plot(handles.axes_az,t_plot(1:i),az_plot(1:i)*1000,'b');
+        
+            inverse_kinematics(qx_plot(i),qy_plot(i),qz_plot(i),0,disable_kinematics_singularity,false);
+            theta4 = theta4_sequence_plot(i);
+            update_end_effector(theta1, theta2, d3, theta4, handles);
+        
+            plot(handles.axes_theta1,t_plot(1:i),theta1_sequence_plot(1:i),'b');
+            plot(handles.axes_theta2,t_plot(1:i),theta2_sequence_plot(1:i),'b');
+            plot(handles.axes_d3,t_plot(1:i),d3_sequence_plot(1:i)*1000,'b');
+            plot(handles.axes_theta4,t_plot(1:i),theta4_sequence_plot(1:i),'b');
+        
+            plot(handles.axes_theta1_dot,t_plot(1:i),theta1_dot_sequence_plot(1:i),'b');
+            plot(handles.axes_theta2_dot,t_plot(1:i),theta2_dot_sequence_plot(1:i),'b');
+            plot(handles.axes_d3_dot,t_plot(1:i),d3_dot_sequence_plot(1:i)*1000,'b');
+            plot(handles.axes_theta4_dot,t_plot(1:i),theta4_dot_sequence_plot(1:i),'b');
+    
+            plot(handles.axes_theta1_2dot,t_plot(1:i),theta1_2dot_sequence_plot(1:i),'b');
+            plot(handles.axes_theta2_2dot,t_plot(1:i),theta2_2dot_sequence_plot(1:i),'b');
+            plot(handles.axes_d3_2dot,t_plot(1:i),d3_2dot_sequence_plot(1:i)*1000,'b');
+            plot(handles.axes_theta4_2dot,t_plot(1:i),theta4_2dot_sequence_plot(1:i),'b');
+
+        
+            plot3(handles.axes_robot,qx_plot(1),qy_plot(1),qz_plot(1),'rx','linewidth',5)
+            plot3(handles.axes_robot,qx_plot(1:i),qy_plot(1:i),qz_plot(1:i),'-.b','LineWidth',2)
+            if (mode_path == 1)
+                plot3(handles.axes_robot,pC(1),pC(2),pC(3),'mx','linewidth',5)
+            end
+            pause(tf/length(index_plot));
+        end
+    end
+end

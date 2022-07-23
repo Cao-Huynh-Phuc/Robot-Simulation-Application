@@ -1,0 +1,53 @@
+function [q,v,a,t,v_max] = trajectory_LSPB(q_max,v_max,a_max,Ts,handles,enable_report)
+if (v_max > sqrt(q_max*a_max)*2/3)
+    v_max = sqrt(q_max*a_max)*2/3;
+    if (enable_report == true)
+        waitfor(warndlg(['Maximum velocity is impossible and is setted to ',num2str(v_max*1000),' mm/s'],'Warning'));      
+        set(handles.edit_v_max,'String',v_max*1000);
+    end
+end
+tc = v_max/a_max;
+%qc = 1/2*a_max*tc^2;
+tf = (q_max + v_max*tc)/v_max;
+t_m = tf - 2*tc;
+
+%N = round(tf/Ts);
+
+% N = round(tf/10*25);
+% if (N>50)
+%     N = 50;
+% end
+% if (N<11)
+%     N = 11;
+% end
+
+%t = linspace(0,tf,N);
+t = 0:0.01:tf;
+if (t(end) ~= tf)
+    t(end + 1) = t(end) + 0.01;
+    t(end + 1) = t(end) + 0.01;
+end
+%N = length(t);
+%% 
+for i=1:length(t)
+    if(t(i)<=tc)        
+        a(i) = a_max;
+        v(i) = a_max*t(i);
+        q(i) = 1/2*a_max*t(i)^2;
+    elseif(t(i)<=(tc+t_m))
+        q1 = -0.5*v_max*tc;
+        a(i) = 0;
+        v(i) = v_max;
+        q(i) = v_max*t(i) + q1;
+    elseif (t(i)<=tf)
+        q2 = v_max*(tf - tc) - 0.5*a_max*tf^2;
+        a(i) = -a_max;
+        v(i) = -a_max*(t(i) - tf);
+        q(i) = -0.5*a_max*t(i)^2 + a_max*tf*t(i) + q2;
+    else
+        q2 = v_max*(tf - tc) - 0.5*a_max*tf^2;
+        %a(i) = -a_max;
+        v(i) = -a_max*(tf - tf);
+        q(i) = -0.5*a_max*tf^2 + a_max*tf*tf + q2;        
+    end
+end
